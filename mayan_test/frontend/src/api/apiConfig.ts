@@ -1,6 +1,6 @@
 // ✅ CORRECTO: Configuración de API en carpeta /api/
 export const API_CONFIG = {
-  BASE_URL: import.meta.env.VITE_MAYAN_URL || 'http://localhost:3000',
+  BASE_URL: import.meta.env.VITE_MAYAN_URL || 'http://localhost:30004',
   TOKEN: import.meta.env.VITE_MAYAN_TOKEN || 'a2be8cdc38080aa1f8c641eec937a6092413066d',
   TIMEOUT: 30000
 };
