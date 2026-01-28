@@ -4,6 +4,7 @@ import { DocumentList } from './componentes/DocumentList'
 import { ServerConfig } from './componentes/ServerConfig'
 import { API_CONFIG } from './api/apiConfig'
 import './style.css'
+import mayanClient from './api/mayanClient'
 
 interface Notification {
   show: boolean
@@ -37,40 +38,35 @@ function App() {
   }
 
   const checkApiStatus = async () => {
-    setApiStatus('checking')
-    try {
-      const [docsRes, typesRes] = await Promise.allSettled([
-        fetch(`${API_CONFIG.BASE_URL}/api/documents/documents/`, {
-          headers: { 'Authorization': `Token ${API_CONFIG.TOKEN}` }
-        }),
-        fetch(`${API_CONFIG.BASE_URL}/api/document-types/document-types/`, {
-          headers: { 'Authorization': `Token ${API_CONFIG.TOKEN}` }
-        })
-      ])
+  setApiStatus('checking')
+  try {
+    // Usa mayanClient para consistencia
+    const [docsRes, typesRes] = await Promise.allSettled([
+      mayanClient.get('/documents/'),
+      mayanClient.get('/document_types/')
+    ])
 
-      const connected = docsRes.status === 'fulfilled' && docsRes.value.ok
-      setApiStatus(connected ? 'connected' : 'error')
+    const connected = docsRes.status === 'fulfilled' && docsRes.value.status === 200
+    setApiStatus(connected ? 'connected' : 'error')
 
-      if (connected) {
-        const docsData = await docsRes.value.json()
-        const typesData = typesRes.status === 'fulfilled' && typesRes.value.ok
-          ? await typesRes.value.json()
-          : { count: 0 }
+    if (connected) {
+      const docsData = docsRes.value.data
+      const typesData = typesRes.status === 'fulfilled' ? typesRes.value.data : { count: 0 }
 
-        setApiStats({
-          documents: docsData.count || 0,
-          documentTypes: typesData.count || 0,
-          tags: 0
-        })
-        showNotification('API conectada correctamente', 'success')
-      } else {
-        showNotification('Error al conectar con la API', 'error')
-      }
-    } catch (error) {
-      setApiStatus('error')
-      showNotification('Error de conexión', 'error')
+      setApiStats({
+        documents: docsData.count || 0,
+        documentTypes: typesData.count || 0,
+        tags: 0
+      })
+      showNotification('API conectada correctamente', 'success')
+    } else {
+      showNotification('Error al conectar con la API', 'error')
     }
+  } catch (error) {
+    setApiStatus('error')
+    showNotification('Error de conexión', 'error')
   }
+}
 
   const handleConfigUpdate = (newConfig: any) => {
     showNotification('Configuración actualizada', 'success')
@@ -78,17 +74,31 @@ function App() {
   }
 
   const runAPITest = async (endpoint: string) => {
-    try {
-      const response = await fetch(`${API_CONFIG.BASE_URL}${endpoint}`, {
-        headers: { 'Authorization': `Token ${API_CONFIG.TOKEN}` }
-      })
-      const data = await response.json()
-      showNotification(`Test exitoso: ${data.count || 0} items encontrados`, 'success')
-      return data
-    } catch (error) {
-      showNotification(`Error en test: ${error}`, 'error')
-    }
+  try {
+    // Usa mayanClient en lugar de fetch directo
+    const response = await mayanClient.get(endpoint)
+    
+    showNotification(
+      `✅ Test exitoso: ${response.data.count || 0} items encontrados`, 
+      'success'
+    )
+    
+    // Muestra datos en consola para debugging
+    console.log(`📊 Test ${endpoint}:`, {
+      status: response.status,
+      count: response.data.count,
+      data: response.data.results ? response.data.results.slice(0, 3) : 'N/A'
+    })
+    
+    return response.data
+  } catch (error: any) {
+    console.error(`❌ Test error ${endpoint}:`, error)
+    showNotification(
+      `Error en test ${endpoint}: ${error.response?.status || error.message}`, 
+      'error'
+    )
   }
+}
 
   return (
     <div className="app">
@@ -208,63 +218,82 @@ function App() {
           )}
 
           {activeTab === 'api-test' && (
-            <div className="api-test-section">
-              <div className="section-header">
-                <h2>API Test Suite</h2>
-                <p>Run automated tests against Mayan EDMS API endpoints</p>
-              </div>
+  <div className="api-test-section">
+    <div className="section-header">
+      <h2>API Test Suite</h2>
+      <p>Run automated tests against Mayan EDMS API endpoints</p>
+    </div>
 
-              <div className="test-cards">
-                <div className="test-card">
-                  <h3>📄 Documents API</h3>
-                  <div className="test-actions">
-                    <button className="test-btn" onClick={() => runAPITest('/api/documents/documents/')}>
-                      Test GET /documents/
-                    </button>
-                    <button className="test-btn secondary" onClick={() => runAPITest('/api/documents/document-types/')}>
-                      Test Metadata
-                    </button>
-                  </div>
-                </div>
+    <div className="test-cards">
+      <div className="test-card">
+        <h3>📄 Documents API</h3>
+        <div className="test-actions">
+          <button className="test-btn" onClick={() => runAPITest('/documents/')}>
+            Test GET /documents/
+          </button>
+          <button className="test-btn secondary" onClick={() => runAPITest('/document_types/')}>
+            Test Document Types
+          </button>
+        </div>
+      </div>
 
-                <div className="test-card">
-                  <h3>🏷️ Document Types</h3>
-                  <div className="test-actions">
-                    <button className="test-btn" onClick={() => runAPITest('/api/document-types/document-types/')}>
-                      List Types
-                    </button>
-                    <button className="test-btn secondary" onClick={() => runAPITest('/api/tags/tags/')}>
-                      List Tags
-                    </button>
-                  </div>
-                </div>
+      <div className="test-card">
+        <h3>🏷️ Tags & Metadata</h3>
+        <div className="test-actions">
+          <button className="test-btn" onClick={() => runAPITest('/tags/')}>
+            List Tags
+          </button>
+          <button className="test-btn secondary" onClick={() => runAPITest('/metadata_types/')}>
+            Metadata Types
+          </button>
+        </div>
+      </div>
 
-                <div className="test-card">
-                  <h3>⚡ Quick Tests</h3>
-                  <div className="test-actions">
-                    <button className="test-btn" onClick={checkApiStatus}>
-                      Test Connection
-                    </button>
-                    <button className="test-btn secondary" onClick={() => runAPITest('/api/about/')}>
-                      API Info
-                    </button>
-                  </div>
-                </div>
+      <div className="test-card">
+        <h3>⚡ Quick Tests</h3>
+        <div className="test-actions">
+          <button className="test-btn" onClick={checkApiStatus}>
+            Test Connection
+          </button>
+          <button className="test-btn secondary" onClick={() => runAPITest('/about/')}>
+            API Info
+          </button>
+        </div>
+      </div>
 
-                <div className="test-card">
-                  <h3>🔍 Search API</h3>
-                  <div className="test-actions">
-                    <button className="test-btn" onClick={() => runAPITest('/api/search/search/')}>
-                      Test Search
-                    </button>
-                    <button className="test-btn secondary" onClick={() => runAPITest('/api/metadata/metadata-types/')}>
-                      Metadata Types
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+      <div className="test-card">
+        <h3>🔍 Search & Workflow</h3>
+        <div className="test-actions">
+          <button className="test-btn" onClick={() => runAPITest('/search/')}>
+            Test Search
+          </button>
+          <button className="test-btn secondary" onClick={() => runAPITest('/workflows/')}>
+            Workflows
+          </button>
+        </div>
+      </div>
+    </div>
+
+    {/* Test avanzado */}
+    <div className="advanced-tests" style={{ marginTop: '30px', padding: '20px', background: '#f5f5f5', borderRadius: '8px' }}>
+      <h4>🔧 Advanced Tests</h4>
+      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '10px' }}>
+        <button className="test-btn small" onClick={() => runAPITest('/cabinets/')}>
+          Cabinets
+        </button>
+        <button className="test-btn small" onClick={() => runAPITest('/checkouts/')}>
+          Checkouts
+        </button>
+        <button className="test-btn small" onClick={() => runAPITest('/statistics/')}>
+          Statistics
+        </button>
+        <button className="test-btn small" onClick={() => runAPITest('/permissions/')}>
+          Permissions
+        </button>
+      </div>
+    </div>
+  </div>
+)}
 
           {activeTab === 'config' && (
             <div className="config-section">
