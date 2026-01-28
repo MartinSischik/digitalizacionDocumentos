@@ -1,4 +1,6 @@
 // ✅ CORRECTO: Configuración de API en carpeta /api/
+/// <reference types="vite/client" />
+/// <reference types="vite/types/importMeta.d.ts" />
 export const API_CONFIG = {
   BASE_URL: import.meta.env.VITE_MAYAN_URL || 'http://127.0.0.1',
   TOKEN: import.meta.env.VITE_MAYAN_TOKEN || 'token',

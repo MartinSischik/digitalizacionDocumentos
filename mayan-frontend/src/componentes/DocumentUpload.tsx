@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { documentApi } from '../api/documentApi'
 import { validateFile, formatFileSize } from '../utils/fileHelper'
-
+const HARDCODED_TOKEN = 'TU_TOKEN_AQUI' 
 interface DocumentUploadProps {
   onUploadSuccess: () => void
 }
@@ -32,13 +32,30 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({ onUploadSuccess 
   }, [])
 
   const loadDocumentTypes = async () => {
-    try {
-      const response = await documentApi.getDocumentTypes()
-      setDocumentTypes(response.data.results || [])
-    } catch (error) {
-      console.error('Error cargando tipos:', error)
+  try {
+    const response = await documentApi.getDocumentTypes()
+    
+    // Función para extraer array de cualquier estructura
+    const extractTypes = (data: any): DocumentType[] => {
+      if (Array.isArray(data)) return data
+      if (data?.results && Array.isArray(data.results)) return data.results
+      if (data?.data && Array.isArray(data.data)) return data.data
+      if (data?.items && Array.isArray(data.items)) return data.items
+      return []
     }
+    
+    const types = extractTypes(response.data)
+    setDocumentTypes(types)
+    
+    // Debug
+    if (types.length === 0) {
+      console.warn('No se encontraron tipos de documento. Estructura recibida:', response.data)
+    }
+    
+  } catch (error) {
+    console.error('Error cargando tipos:', error)
   }
+}
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0]
@@ -58,76 +75,51 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({ onUploadSuccess 
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    if (!file) {
-      setError('Por favor selecciona un archivo')
-      return
-    }
-
-    setLoading(true)
-    setError('')
-    setUploadProgress(0)
-
-    // Simular progreso
-    const progressInterval = setInterval(() => {
-      setUploadProgress(prev => {
-        if (prev >= 90) {
-          clearInterval(progressInterval)
-          return prev
-        }
-        return prev + 10
-      })
-    }, 200)
-
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('label', label)
-    if (description) formData.append('description', description)
-    if (documentTypeId) formData.append('document_type', documentTypeId)
-
-    try {
-      const response = await documentApi.uploadDocument(formData)
-      clearInterval(progressInterval)
-      setUploadProgress(100)
-
-      // Añadir al historial
-      setUploadHistory(prev => [{
-        name: label,
-        status: 'success',
-        date: new Date()
-      }, ...prev.slice(0, 4)]) // Mantener solo últimos 5
-
-      // Notificación visual
-      showNotification('success', `✅ "${label}" subido exitosamente`)
-      
-      // Resetear formulario
-      setTimeout(() => {
-        setFile(null)
-        setLabel('')
-        setDescription('')
-        setUploadProgress(0)
-        onUploadSuccess()
-      }, 1500)
-
-    } catch (error: any) {
-      clearInterval(progressInterval)
-      const errorMsg = error.response?.data?.detail || 'Error al subir documento'
-      setError(errorMsg)
-      
-      setUploadHistory(prev => [{
-        name: label,
-        status: 'error',
-        date: new Date()
-      }, ...prev.slice(0, 4)])
-      
-      showNotification('error', `❌ ${errorMsg}`)
-    } finally {
-      setLoading(false)
-    }
+  // En tu DocumentUpload.tsx, modifica handleSubmit para debug:
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault()
+  
+  if (!file) {
+    setError('Por favor selecciona un archivo')
+    return
   }
 
+  // DEBUG: Verificar token
+  console.log('🔍 Token hardcodeado:', HARDCODED_TOKEN ? 'SÍ' : 'NO')
+  
+  // DEBUG: Verificar FormData
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('label', label)
+  if (description) formData.append('description', description)
+  if (documentTypeId) formData.append('document_type', documentTypeId)
+  
+  console.log('📋 FormData contenido:')
+  for (let [key, value] of formData.entries()) {
+    console.log(`  ${key}:`, value instanceof File ? `File(${value.name})` : value)
+  }
+
+  try {
+    const response = await documentApi.uploadDocument(formData)
+    console.log('✅ Upload response:', response)
+    // ... resto del código
+  } catch (error: any) {
+    // DEBUG DETALLADO
+    console.error('❌ Upload error completo:', {
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      headers: error.response?.headers,
+      config: {
+        url: error.config?.url,
+        method: error.config?.method,
+        headers: error.config?.headers,
+        data: error.config?.data
+      }
+    })
+    // ... resto del código
+  }
+}
   const showNotification = (type: 'success' | 'error', message: string) => {
     const notification = document.createElement('div')
     notification.className = `upload-notification ${type}`
