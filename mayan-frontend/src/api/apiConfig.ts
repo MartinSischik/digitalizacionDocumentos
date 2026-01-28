@@ -1,7 +1,7 @@
 // ✅ CORRECTO: Configuración de API en carpeta /api/
 export const API_CONFIG = {
   BASE_URL: import.meta.env.VITE_MAYAN_URL || 'http://127.0.0.1',
-  TOKEN: import.meta.env.VITE_MAYAN_TOKEN || 'a2be8cdc38080aa1f8c641eec937a6092413066d',
+  TOKEN: import.meta.env.VITE_MAYAN_TOKEN || 'token',
   TIMEOUT: 30000
 };
 // Endpoints de Mayan EDMS
