@@ -47,74 +47,81 @@ export const documentApi = {
       params: { page },
     }),
 
-  // ✅ uploadDocument CORREGIDO (flujo de 2 pasos)
+  // ✅ uploadDocument CORREGIDO CON action_name REQUERIDO
   uploadDocument: async (formData: FormData) => {
-  console.log('🚀 Iniciando upload...')
-  
-  // Paso 1: Crear documento (ya funciona)
-  const document_type = formData.get('document_type')
-  const label = formData.get('label')
-  const description = formData.get('description')
-  
-  const documentData = {
-    document_type_id: document_type ? Number(document_type) : null,
-    label: label ? String(label) : '',
-    description: description ? String(description) : '',
-  }
-  
-  console.log('📄 Creando documento:', documentData)
-  
-  const documentResponse = await mayanClient.post('/documents/', documentData)
-  const documentId = documentResponse.data.id
-  console.log('✅ Documento creado ID:', documentId)
-  
-  // Paso 2: Subir archivo - PROBAR DIFERENTES CAMPOS
-  const file = formData.get('file') as File
-  if (!file) {
-    throw new Error('No se encontró archivo en FormData')
-  }
-  
-  const fileFormData = new FormData()
-  
-  // Opción A: 'file' (puede ser este)
-  fileFormData.append('file', file)
-  
-  // Opción B: 'file_new' (puede ser este también)
-  // fileFormData.append('file_new', file)
-  
-  fileFormData.append('comment', 'Uploaded via React app')
-  fileFormData.append('filename', file.name)
-  
-  console.log('📤 Subiendo archivo:', file.name, 'tamaño:', file.size)
-  console.log('📋 FileFormData entries:')
-  for (let [key, value] of fileFormData.entries()) {
-    console.log(`  ${key}:`, value instanceof File ? `File(${value.name})` : value)
-  }
-  
-  try {
-    const fileResponse = await mayanClient.post(
-      `/documents/${documentId}/files/`,
-      fileFormData
-    )
+    console.log('🚀 Iniciando upload...')
     
-    console.log('✅ Archivo subido:', fileResponse.data)
+    // Paso 1: Crear documento
+    const document_type = formData.get('document_type')
+    const label = formData.get('label')
+    const description = formData.get('description')
     
-    return {
-      document: documentResponse.data,
-      file: fileResponse.data,
+    const documentData = {
+      document_type_id: document_type ? Number(document_type) : null,
+      label: label ? String(label) : '',
+      description: description ? String(description) : '',
     }
     
-  } catch (error: any) {
-    console.error('❌ Error subiendo archivo:', {
-      status: error.response?.status,
-      data: error.response?.data,
-      message: error.message
-    })
-    throw error
-  }
-},
+    console.log('📄 Creando documento:', documentData)
+    
+    const documentResponse = await mayanClient.post('/documents/', documentData)
+    const documentId = documentResponse.data.id
+    console.log('✅ Documento creado ID:', documentId)
+    
+    // Paso 2: Subir archivo - CON action_name REQUERIDO
+    const file = formData.get('file') as File
+    if (!file) {
+      throw new Error('No se encontró archivo en FormData')
+    }
+    
+    const fileFormData = new FormData()
+    
+    // Campo para el archivo (file_new es el correcto para Mayan)
+    fileFormData.append('file_new', file)
+    
+    // ✅ CAMBIO CRÍTICO: Añadir action_name REQUERIDO
+    fileFormData.append('action_name', 'append') // 'append', 'replace', 'checkout'
+    
+    fileFormData.append('comment', 'Uploaded via React app')
+    // filename es opcional, Mayan lo extrae del archivo
+    
+    console.log('📤 Subiendo archivo:', file.name, 'tamaño:', file.size)
+    console.log('📋 FileFormData entries:')
+    for (let [key, value] of fileFormData.entries()) {
+      console.log(`  ${key}:`, value instanceof File ? `File(${value.name})` : value)
+    }
+    
+    try {
+      const fileResponse = await mayanClient.post(
+        `/documents/${documentId}/files/`,
+        fileFormData
+      )
+      
+      console.log('✅ Archivo subido exitosamente:', fileResponse.data)
+      
+      return {
+        document: documentResponse.data,
+        file: fileResponse.data,
+      }
+      
+    } catch (error: any) {
+      console.error('❌ Error subiendo archivo DETALLADO:', {
+        status: error.response?.status,
+        data: error.response?.data,
+        url: error.config?.url,
+        method: error.config?.method,
+      })
+      
+      // Mostrar el error completo para debugging
+      if (error.response?.data) {
+        console.log('📄 ERROR DATA del archivo:', JSON.stringify(error.response.data, null, 2))
+      }
+      
+      throw error
+    }
+  },
 
-  deleteDocument: (id: number) =>
+    deleteDocument: (id: number) =>
     mayanClient.delete(`${ENDPOINTS.DOCUMENTS}${id}/`),
 
   getDocumentTypes: () =>
@@ -123,5 +130,8 @@ export const documentApi = {
   getDocumentDetail: (id: number) =>
     mayanClient.get<Document>(`${ENDPOINTS.DOCUMENTS}${id}/`),
 }
+
+
+
 
 export default documentApi

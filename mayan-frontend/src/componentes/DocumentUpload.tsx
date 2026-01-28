@@ -103,20 +103,21 @@ const handleSubmit = async (e: React.FormEvent) => {
     const response = await documentApi.uploadDocument(formData)
     console.log('✅ Upload response:', response)
     // ... resto del código
-  } catch (error: any) {
-    // DEBUG DETALLADO
-    console.error('❌ Upload error completo:', {
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      data: error.response?.data,
-      headers: error.response?.headers,
-      config: {
-        url: error.config?.url,
-        method: error.config?.method,
-        headers: error.config?.headers,
-        data: error.config?.data
-      }
-    })
+  } catch (error: any)
+   {console.error('❌ Error subiendo archivo DETALLADO:', {
+    status: error.response?.status,
+    data: error.response?.data,  // ← ESTO ES LO QUE NECESITAMOS VER
+    url: error.config?.url,
+    method: error.config?.method,
+  })
+  
+  // Mostrar el error completo
+  if (error.response?.data) {
+    console.log('📄 ERROR DATA del archivo:', JSON.stringify(error.response.data, null, 2))
+  }
+  
+  throw error
+
     // ... resto del código
   }
 }
