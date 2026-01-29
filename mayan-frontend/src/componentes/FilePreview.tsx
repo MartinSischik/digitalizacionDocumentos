@@ -1,14 +1,14 @@
-// FilePreview.tsx - Ventana flotante independiente (múltiples instancias)
+// FilePreview.tsx - Versión corregida usando URLs de preview
 import React, { useState, useEffect, useRef } from 'react';
 import { documentApi, DocumentFile } from '../api/documentApi';
-import '../style.css';
+import '../style.css'; // Usamos el style.css principal
 
 interface FilePreviewProps {
   documentId: number;
   file: DocumentFile;
   onClose: () => void;
   isOpen: boolean;
-  position?: { x: number; y: number };
+  windowIndex?: number;
 }
 
 export const FilePreview: React.FC<FilePreviewProps> = ({
@@ -16,37 +16,34 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
   file,
   onClose,
   isOpen,
-  position = { x: 100, y: 100 }
+  windowIndex = 0
 }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
-  const [viewMode, setViewMode] = useState<'viewer' | 'download'>('viewer');
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
-  const [fileUrl, setFileUrl] = useState<string>('');
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [downloading, setDownloading] = useState(false);
-  const [windowPosition, setWindowPosition] = useState(position);
+  const [previewUrl, setPreviewUrl] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
+  const [windowPosition, setWindowPosition] = useState({ 
+    x: 50 + (windowIndex * 30), 
+    y: 50 + (windowIndex * 30) 
+  });
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [isMinimized, setIsMinimized] = useState(false);
-  const [isMaximized, setIsMaximized] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [textContent, setTextContent] = useState<string>('');
   
   const modalRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   
   // Determinar tipo de archivo
   const getFileType = (): 'pdf' | 'image' | 'text' | 'medical' | 'other' => {
     const filename = file.filename.toLowerCase();
     const mimetype = file.mimetype?.toLowerCase() || '';
     
-    // Detectar archivos médicos
-    const medicalExtensions = ['dicom', 'dcm', 'nii', 'nifti', 'nrrd', 'mha', 'mhd'];
-    const medicalKeywords = ['xray', 'rayos', 'ct', 'mri', 'scan', 'radiografia', 'ecografia'];
+    const medicalKeywords = ['xray', 'rayos', 'ct', 'mri', 'scan', 'radiografia', 'ecografia', 'dicom'];
     
-    const isMedicalFile = medicalExtensions.some(ext => filename.endsWith(`.${ext}`)) ||
-                         medicalKeywords.some(keyword => filename.includes(keyword)) ||
+    const isMedicalFile = medicalKeywords.some(keyword => filename.includes(keyword)) ||
                          mimetype.includes('dicom') ||
                          mimetype.includes('medical');
     
@@ -55,12 +52,28 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     if (mimetype.startsWith('image/')) return 'image';
     if (mimetype.startsWith('text/') || 
         filename.endsWith('.txt') || 
-        filename.endsWith('.csv')) return 'text';
+        filename.endsWith('.csv') ||
+        filename.endsWith('.json') ||
+        filename.endsWith('.xml') ||
+        filename.endsWith('.html')) return 'text';
     
     return 'other';
   };
 
-  // Función de descarga original
+  // Función para obtener URL de PREVIEW (no download)
+  const getPreviewUrl = (): string => {
+    // Usamos la URL de preview para imágenes y PDFs
+    const fileType = getFileType();
+    
+    if (fileType === 'pdf' || fileType === 'image' || fileType === 'medical') {
+      return documentApi.getFilePreviewUrl(documentId, file.id);
+    }
+    
+    // Para archivos de texto, necesitamos descargarlos
+    return documentApi.getFileDownloadUrl(documentId, file.id);
+  };
+
+  // Función de descarga original (para archivos que no se pueden previsualizar)
   const downloadFile = async () => {
     if (downloading) return;
     
@@ -85,7 +98,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     }
   };
 
-  // Cargar archivo
+  // Cargar archivo para visualización
   useEffect(() => {
     if (!isOpen) return;
     
@@ -100,58 +113,42 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
         
         switch (fileType) {
           case 'pdf':
-            setViewMode('viewer');
-            setFileUrl(documentApi.getFilePreviewUrl(documentId, file.id));
-            break;
-            
           case 'image':
           case 'medical':
-            setViewMode('viewer');
-            setFileUrl(documentApi.getFileDownloadUrl(documentId, file.id));
+            // Usar URL de PREVIEW (no download)
+            const previewUrl = documentApi.getFilePreviewUrl(documentId, file.id);
+            setPreviewUrl(previewUrl);
             break;
             
           case 'text':
-            setViewMode('viewer');
-            const blob = await documentApi.downloadFile(documentId, file.id);
-            const text = await blob.text();
-            setFileUrl(URL.createObjectURL(new Blob([text], { type: 'text/plain' })));
+            // Descargar y mostrar como texto
+            try {
+              const blob = await documentApi.downloadFile(documentId, file.id);
+              const text = await blob.text();
+              setTextContent(text);
+            } catch (textError) {
+              console.error('Error cargando texto:', textError);
+              // Fallback a URL de descarga
+              setPreviewUrl(documentApi.getFileDownloadUrl(documentId, file.id));
+            }
             break;
             
           default:
-            setViewMode('download');
-            setFileUrl(documentApi.getFileDownloadUrl(documentId, file.id));
+            // Para otros tipos, usar URL de descarga como fallback
+            setPreviewUrl(documentApi.getFileDownloadUrl(documentId, file.id));
         }
       } catch (err: any) {
         console.error('Error cargando archivo:', err);
-        setError(`Error al cargar: ${err.message || 'Desconocido'}`);
+        setError(`Error al cargar el archivo: ${err.message || 'Error desconocido'}`);
       } finally {
         setLoading(false);
       }
     };
     
     loadFile();
-    
-    return () => {
-      if (fileUrl && !fileUrl.startsWith('http')) {
-        URL.revokeObjectURL(fileUrl);
-      }
-    };
   }, [documentId, file.id, isOpen]);
 
-  // Funciones para arrastrar la ventana
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (headerRef.current && headerRef.current.contains(e.target as Node)) {
-      setIsDragging(true);
-      const rect = modalRef.current?.getBoundingClientRect();
-      if (rect) {
-        setDragOffset({
-          x: e.clientX - rect.left,
-          y: e.clientY - rect.top
-        });
-      }
-    }
-  };
-
+  // Funcionalidad para arrastrar la ventana
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (isDragging && modalRef.current) {
@@ -184,79 +181,52 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     }
   }, [isDragging, dragOffset]);
 
-  // Controles de teclado
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (headerRef.current && headerRef.current.contains(e.target as Node)) {
+      setIsDragging(true);
+      const rect = modalRef.current?.getBoundingClientRect();
+      if (rect) {
+        setDragOffset({
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top
+        });
+      }
+    }
+  };
+
+  // Cerrar con ESC
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!isOpen || !modalRef.current) return;
-      
-      // Solo aplicar atajos si la ventana tiene focus
-      if (!modalRef.current.contains(document.activeElement)) return;
-      
-      switch (e.key) {
-        case 'Escape':
-          onClose();
-          break;
-        case '+':
-        case '=':
-          if (e.ctrlKey) {
-            e.preventDefault();
-            setZoom(prev => Math.min(prev + 0.25, 3));
-          }
-          break;
-        case '-':
-          if (e.ctrlKey) {
-            e.preventDefault();
-            setZoom(prev => Math.max(prev - 0.25, 0.25));
-          }
-          break;
-        case 'r':
-        case 'R':
-          if (e.ctrlKey) {
-            e.preventDefault();
-            setRotation(prev => (prev + 90) % 360);
-          }
-          break;
-        case 'd':
-        case 'D':
-          if (e.ctrlKey) {
-            e.preventDefault();
-            downloadFile();
-          }
-          break;
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
       }
     };
     
     if (isOpen) {
-      document.addEventListener('keydown', handleKeyDown);
+      document.addEventListener('keydown', handleEsc);
     }
     
     return () => {
-      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('keydown', handleEsc);
     };
   }, [isOpen, onClose]);
 
-  const toggleMinimize = () => {
-    setIsMinimized(!isMinimized);
-  };
-
-  const toggleMaximize = () => {
-    setIsMaximized(!isMaximized);
-    if (!isMaximized) {
-      setWindowPosition({ x: 0, y: 0 });
+  const getFileIcon = () => {
+    const fileType = getFileType();
+    switch (fileType) {
+      case 'pdf': return '📕';
+      case 'image': return '🖼️';
+      case 'medical': return '🩺';
+      case 'text': return '📝';
+      default: return '📄';
     }
   };
 
-  const copyToClipboard = async () => {
-    if (getFileType() === 'text') {
-      try {
-        const blob = await documentApi.downloadFile(documentId, file.id);
-        const text = await blob.text();
-        await navigator.clipboard.writeText(text);
-        alert('Texto copiado al portapapeles');
-      } catch (err) {
-        console.error('Error copiando texto:', err);
-      }
-    }
+  const formatFileSize = (bytes?: number): string => {
+    if (!bytes) return 'Desconocido';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
   const renderContent = () => {
@@ -277,7 +247,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
           <div className="error-icon">⚠️</div>
           <h3>Error al cargar</h3>
           <p>{error}</p>
-          <button onClick={downloadFile} className="download-fallback">
+          <button onClick={downloadFile} className="download-fallback-btn">
             ⬇️ Descargar archivo
           </button>
         </div>
@@ -289,9 +259,12 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
         return (
           <div className="pdf-container">
             <iframe
-              src={fileUrl}
+              src={previewUrl}
               title={file.filename}
+              className="pdf-iframe"
               style={{ transform: `scale(${zoom})` }}
+              onLoad={() => setLoading(false)}
+              onError={() => setError('No se pudo cargar el PDF')}
             />
           </div>
         );
@@ -299,19 +272,18 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
       case 'image':
       case 'medical':
         return (
-          <div 
-            className="image-container"
-            style={{ 
-              transform: `scale(${zoom}) rotate(${rotation}deg)`,
-              cursor: zoom > 1 ? 'grab' : 'default'
-            }}
-          >
+          <div className="image-container">
             <img
-              src={fileUrl}
+              src={previewUrl}
               alt={file.filename}
+              className={`preview-image ${fileType === 'medical' ? 'medical-image' : ''}`}
+              style={{ 
+                transform: `scale(${zoom}) rotate(${rotation}deg)`,
+                maxWidth: '100%',
+                maxHeight: '100%'
+              }}
               onLoad={() => setLoading(false)}
               onError={() => setError('No se pudo cargar la imagen')}
-              className={fileType === 'medical' ? 'medical-image' : ''}
             />
           </div>
         );
@@ -320,7 +292,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
         return (
           <div className="text-container">
             <textarea
-              value={fileUrl ? 'Cargando...' : ''}
+              value={textContent}
               readOnly
               className="text-preview"
               style={{ transform: `scale(${zoom})` }}
@@ -332,10 +304,14 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
       default:
         return (
           <div className="generic-container">
-            <div className="file-icon-large">📄</div>
+            <div className="file-icon-large">{getFileIcon()}</div>
             <h3>Previsualización no disponible</h3>
-            <p>Este tipo de archivo requiere descarga.</p>
-            <button onClick={downloadFile} className="primary-download">
+            <p>Este tipo de archivo solo se puede descargar.</p>
+            <button 
+              onClick={downloadFile} 
+              className="primary-download-btn"
+              disabled={downloading}
+            >
               {downloading ? '⏬ Descargando...' : '⬇️ Descargar archivo'}
             </button>
           </div>
@@ -351,158 +327,106 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
   return (
     <div
       ref={modalRef}
-      className={`file-preview-window ${isDragging ? 'dragging' : ''} ${isMinimized ? 'minimized' : ''} ${isMaximized ? 'maximized' : ''}`}
+      className="file-preview-window"
       style={{
-        left: isMaximized ? 0 : `${windowPosition.x}px`,
-        top: isMaximized ? 0 : `${windowPosition.y}px`,
-        width: isMaximized ? '100vw' : '80vw',
-        height: isMaximized ? '100vh' : (isMinimized ? 'auto' : '80vh'),
-        minWidth: isMaximized ? '100%' : '600px',
-        minHeight: isMinimized ? 'auto' : '400px',
-        zIndex: 1000
+        position: 'fixed',
+        left: `${windowPosition.x}px`,
+        top: `${windowPosition.y}px`,
+        zIndex: 1000 + windowIndex // Importante para múltiples ventanas
       }}
     >
-      {/* Barra de título (para arrastrar) */}
+      {/* Barra de título para arrastrar */}
       <div 
         ref={headerRef}
         className="window-header"
         onMouseDown={handleMouseDown}
+        style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
       >
         <div className="window-title">
-          <span className="file-icon-window">
-            {fileType === 'pdf' ? '📕' :
-             fileType === 'image' ? '🖼️' :
-             fileType === 'medical' ? '🩺' :
-             fileType === 'text' ? '📝' : '📄'}
-          </span>
+          <span className="window-icon">{getFileIcon()}</span>
           <span className="filename" title={file.filename}>
             {file.filename.length > 40 
               ? `${file.filename.substring(0, 40)}...` 
               : file.filename}
           </span>
           <span className="file-info">
-            {formatFileSize(file.size || 0)} • {fileType}
+            {formatFileSize(file.size)} • {file.mimetype?.split('/')[1] || 'Archivo'}
           </span>
         </div>
         
         <div className="window-controls">
-          <button 
-            onClick={toggleMinimize}
-            className="window-btn minimize-btn"
-            title="Minimizar"
-          >
-            _
-          </button>
-          <button 
-            onClick={toggleMaximize}
-            className="window-btn maximize-btn"
-            title={isMaximized ? 'Restaurar' : 'Maximizar'}
-          >
-            {isMaximized ? '🗗' : '🗖'}
-          </button>
-          <button 
+          {canZoom && (
+            <div className="zoom-controls">
+              <button
+                onClick={() => setZoom(prev => Math.max(0.25, prev - 0.25))}
+                className="zoom-btn"
+                title="Alejar (Ctrl + -)"
+              >
+                ➖
+              </button>
+              <span className="zoom-level">{Math.round(zoom * 100)}%</span>
+              <button
+                onClick={() => setZoom(prev => Math.min(3, prev + 0.25))}
+                className="zoom-btn"
+                title="Acercar (Ctrl + +)"
+              >
+                ➕
+              </button>
+            </div>
+          )}
+          
+          {(fileType === 'image' || fileType === 'medical') && (
+            <button
+              onClick={() => setRotation(prev => (prev + 90) % 360)}
+              className="rotate-btn"
+              title="Rotar (Ctrl + R)"
+            >
+              🔄
+            </button>
+          )}
+          
+          {/* Botón de descarga para archivos que no se pueden previsualizar */}
+          {(fileType === 'other' || error) && (
+            <button
+              onClick={downloadFile}
+              disabled={downloading}
+              className="action-btn download-btn-window"
+              title="Descargar archivo"
+            >
+              {downloading ? '⏬' : '⬇️'}
+            </button>
+          )}
+          
+          <button
             onClick={onClose}
-            className="window-btn close-btn"
-            title="Cerrar"
+            className="close-btn"
+            title="Cerrar (ESC)"
           >
             ✕
           </button>
         </div>
       </div>
-
-      {/* Contenido de la ventana */}
-      {!isMinimized && (
-        <div className="window-content" ref={contentRef}>
-          {/* Barra de herramientas */}
-          <div className="toolbar">
-            <div className="toolbar-left">
-              {canZoom && (
-                <div className="zoom-controls">
-                  <button 
-                    onClick={() => setZoom(prev => Math.max(prev - 0.25, 0.25))}
-                    title="Alejar (Ctrl + -)"
-                    className="toolbar-btn"
-                  >
-                    ➖
-                  </button>
-                  <span className="zoom-level">{Math.round(zoom * 100)}%</span>
-                  <button 
-                    onClick={() => setZoom(prev => Math.min(prev + 0.25, 3))}
-                    title="Acercar (Ctrl + +)"
-                    className="toolbar-btn"
-                  >
-                    ➕
-                  </button>
-                </div>
-              )}
-              
-              {(fileType === 'image' || fileType === 'medical') && (
-                <button 
-                  onClick={() => setRotation(prev => (prev + 90) % 360)}
-                  title="Rotar 90° (Ctrl + R)"
-                  className="toolbar-btn"
-                >
-                  🔄
-                </button>
-              )}
-              
-              {fileType === 'text' && (
-                <button 
-                  onClick={copyToClipboard}
-                  title="Copiar texto"
-                  className="toolbar-btn"
-                >
-                  📋
-                </button>
-              )}
-            </div>
-            
-            <div className="toolbar-right">
-              {/* BOTÓN DE DESCARGA ORIGINAL */}
-              <button
-                onClick={downloadFile}
-                disabled={downloading}
-                title={downloading ? 'Descargando...' : 'Descargar archivo (Ctrl + D)'}
-                className="action-btn download-btn-window"
-              >
-                {downloading ? '⏬ Descargando...' : '⬇️ Descargar'}
-              </button>
-            </div>
-          </div>
-
-          {/* Contenido del archivo */}
-          <div className="preview-content-window">
-            {renderContent()}
-          </div>
-
-          {/* Barra de estado */}
-          <div className="status-bar">
-            <div className="status-info">
-              <span>ID: {file.id} • Documento: {documentId}</span>
-              <span>•</span>
-              <span>Tipo: {file.mimetype || 'Desconocido'}</span>
-              <span>•</span>
-              <span>Zoom: {Math.round(zoom * 100)}%</span>
-              {rotation > 0 && <span>• Rotación: {rotation}°</span>}
-            </div>
-            <div className="status-shortcuts">
-              <span><kbd>Ctrl</kbd> + <kbd>+/-</kbd> Zoom</span>
-              {fileType === 'image' && <span><kbd>Ctrl</kbd> + <kbd>R</kbd> Rotar</span>}
-              <span><kbd>Ctrl</kbd> + <kbd>D</kbd> Descargar</span>
-            </div>
-          </div>
+      
+      {/* Contenido principal */}
+      <div ref={contentRef} className="window-content">
+        <div className="preview-content-window">
+          {renderContent()}
         </div>
-      )}
+      </div>
+      
+      {/* Barra de estado */}
+      <div className="preview-footer">
+        <div className="status-info">
+          <span>ID: {file.id} • Documento: {documentId}</span>
+          <span> • </span>
+          <span>Tipo: {file.mimetype || 'Desconocido'}</span>
+          <span> • </span>
+          <span>Zoom: {Math.round(zoom * 100)}%</span>
+          {rotation > 0 && <span> • Rotación: {rotation}°</span>}
+        </div>
+      </div>
     </div>
   );
-};
-
-const formatFileSize = (bytes: number): string => {
-  if (!bytes) return '0 B';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 };
 
 export default FilePreview;

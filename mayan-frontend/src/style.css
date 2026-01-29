@@ -3387,5 +3387,6 @@ kbd {
 
 .file-preview-window.maximized::after {
   display: none;
+
 }
 }

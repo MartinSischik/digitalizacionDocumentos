@@ -28,30 +28,25 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({ onUploadSuccess 
 
   // Cargar tipos de documento
   useEffect(() => {
-    loadDocumentTypes()
-  }, [])
+  loadDocumentTypes()
+}, [])
 
-  const loadDocumentTypes = async () => {
+const loadDocumentTypes = async () => {
   try {
     const response = await documentApi.getDocumentTypes()
-    
-    // Función para extraer array de cualquier estructura
-    const extractTypes = (data: any): DocumentType[] => {
-      if (Array.isArray(data)) return data
-      if (data?.results && Array.isArray(data.results)) return data.results
-      if (data?.data && Array.isArray(data.data)) return data.data
-      if (data?.items && Array.isArray(data.items)) return data.items
-      return []
-    }
-    
-    const types = extractTypes(response.data)
+
+    // Mayan normalmente devuelve { results: [...] }
+    const types: DocumentType[] = Array.isArray(response.data)
+      ? response.data
+      : response.data.results || []
+
     setDocumentTypes(types)
-    
-    // Debug
-    if (types.length === 0) {
-      console.warn('No se encontraron tipos de documento. Estructura recibida:', response.data)
+
+    // ⭐ seleccionar automáticamente el primero
+    if (types.length > 0) {
+      setDocumentTypeId(String(types[0].id))
     }
-    
+
   } catch (error) {
     console.error('Error cargando tipos:', error)
   }
@@ -276,7 +271,7 @@ const handleSubmit = async (e: React.FormEvent) => {
                   disabled={loading || documentTypes.length === 0}
                   className="form-select"
                 >
-                  <option value="">-- Seleccionar tipo --</option>
+                  
                   {documentTypes.map(type => (
                     <option key={type.id} value={type.id}>
                       {type.label}
